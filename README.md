@@ -44,7 +44,7 @@ make local-run                # Build and run all 8 outputs with timing
 # Run individual outputs:
 ./demo-native-mc -M 10000 -S 0 -T    # CVA with 10000 MC iterations and timing
 ./demo-native-mc -M 10000 -S 7 -T    # European Put
-./demo-native-mc -S 0                 # UxHw kernel (natively one random path)
+./demo-native-mc -S 0                # UxHw kernel (natively one random path)
 ./demo-native-mc -M 10000 -S 0 -j    # JSON output
 ```
 
@@ -75,34 +75,34 @@ The underlying follows Geometric Brownian Motion under the risk-neutral
 measure, simulated with the exact log-Euler scheme in
 [`xva-gbm.c`](src/xva-gbm.c):
 
-$$
+```math
 dS(t) = (r - q)\,S(t)\,dt + \sigma\,S(t)\,dW(t)
-$$
+```
 
-$$
+```math
 S(t_{i+1}) = S(t_i)\exp\left[\left(r - q - \tfrac{1}{2}\sigma^{2}\right)\Delta t + \sigma\sqrt{\Delta t}\,Z_i\right],
 \qquad Z_i \sim N(0, 1)
-$$
+```
 
 The mark-to-market value of the forward at time $t$, in
 [`xva-exposure.c`](src/xva-exposure.c), is
 
-$$
+```math
 V(t) = S(t)e^{-q(T-t)} - Ke^{-r(T-t)}
-$$
+```
 
 From $V$ the code builds the four exposure measures that every adjustment is
 derived from:
 
-$$
+```math
 \mathrm{EE}(t) = \mathbb{E}[V(t)], \qquad
 \mathrm{EPE}(t) = \mathbb{E}[\max(V(t), 0)]
-$$
+```
 
-$$
+```math
 \mathrm{ENE}(t) = \mathbb{E}[\min(V(t), 0)], \qquad
 \mathrm{PFE}(t) = Q_{0.975}\!\left(\max(V(t), 0)\right)
-$$
+```
 
 This is the single point where the two execution modes differ. Monte Carlo mode
 forms each expectation as a cross-sectional average over the path ensemble,
@@ -113,11 +113,11 @@ while UxHw mode integrates one distributional path out in a single pass.
 Hazard rates are bootstrapped from credit spreads under the standard credit
 triangle, and survival is exponential:
 
-$$
+```math
 \lambda = \frac{s}{1 - R}, \qquad
 Q(t) = e^{-\lambda t}, \qquad
 \mathrm{DF}(t) = e^{-rt}
-$$
+```
 
 The default probability over a grid interval is $Q(t_{i-1}) - Q(t_i)$.
 
@@ -126,25 +126,25 @@ The default probability over a grid interval is $Q(t_{i-1}) - Q(t_i)$.
 With loss given default $\mathrm{LGD} = 1 - R$, the counterparty carrying
 subscript $C$ and the bank subscript $B$, the five adjustments are
 
-$$
+```math
 \mathrm{CVA} = \mathrm{LGD}_C \sum_{i=1}^{N} \mathrm{EPE}(t_i)\,\mathrm{DF}(t_i)\left[Q_C(t_{i-1}) - Q_C(t_i)\right]
-$$
+```
 
-$$
+```math
 \mathrm{DVA} = \mathrm{LGD}_B \sum_{i=1}^{N} \left|\mathrm{ENE}(t_i)\right|\mathrm{DF}(t_i)\left[Q_B(t_{i-1}) - Q_B(t_i)\right]
-$$
+```
 
-$$
+```math
 \mathrm{BCVA} = \mathrm{CVA} - \mathrm{DVA}
-$$
+```
 
 FVA is the funding cost net of the funding benefit, each weighted by the
 survival of the party that bears it:
 
-$$
+```math
 \mathrm{FVA} = \underbrace{\sum_{i} \mathrm{EPE}(t_i)\,Q_C(t_i)\,s_f\,\mathrm{DF}(t_i)\,\Delta t}_{\text{FCA}}
 - \underbrace{\sum_{i} \left|\mathrm{ENE}(t_i)\right|Q_B(t_i)\,s_l\,\mathrm{DF}(t_i)\,\Delta t}_{\text{FBA}}
-$$
+```
 
 The demo's funding data lends at the risk-free rate, so $s_l = 0$ and only the
 FCA term contributes.
@@ -153,28 +153,28 @@ MVA charges the funding spread against posted initial margin. The demo
 approximates the initial margin from the PFE profile scaled to the ten-day
 margin period of risk, and weights it by counterparty survival:
 
-$$
+```math
 \mathrm{MVA} = \sum_{i} \mathrm{IM}(t_i)\,s_f\,Q_C(t_i)\,\mathrm{DF}(t_i)\,\Delta t,
 \qquad
 \mathrm{IM}(t_i) = \mathrm{PFE}(t_i)\sqrt{10/252}
-$$
+```
 
 KVA charges the hurdle rate against regulatory capital. Capital is driven by
 the Basel effective expected positive exposure, which is a *running maximum*
 over the expected profile rather than a per-path quantity:
 
-$$
+```math
 \mathrm{EEPE}(t_i) = \max_{j \le i} \mathrm{EPE}(t_j), \qquad
 \mathrm{EAD}(t_i) = \alpha \cdot \mathrm{EEPE}(t_i)
-$$
+```
 
-$$
+```math
 \mathrm{KVA} = \sum_{i} \underbrace{w \cdot 12.5 \cdot \mathrm{EAD}(t_i) \cdot c}_{\text{regulatory capital}} \cdot h \cdot Q(t_i)\,\mathrm{DF}(t_i)\,\Delta t
-$$
+```
 
-with Basel multiplier $\alpha = 1.4$, risk weight $w = 100\%$, capital ratio
-$c = 8\%$ and hurdle rate $h = 10\%$. The survival weight $Q(t)$ in KVA uses a
-fixed hazard rate of $2\%$ (`kXvaUnilateralHazardRate`) rather than the
+with Basel multiplier $\alpha = 1.4$, risk weight $w = 100\\%$, capital ratio
+$c = 8\\%$ and hurdle rate $h = 10\\%$. The survival weight $Q(t)$ in KVA uses a
+fixed hazard rate of $2\\%$ (`kXvaUnilateralHazardRate`) rather than the
 counterparty's calibrated rate. The running maximum is why the expectation has
 to be formed before the adjustment, as the [Dual execution
 modes](#dual-execution-modes) section explains.
@@ -183,14 +183,14 @@ The total is the sum of the five, and the eighth output is the Black-Scholes
 European put written on the same underlying, which bypasses the exposure
 profile entirely:
 
-$$
+```math
 \mathrm{xVA} = \mathrm{CVA} - \mathrm{DVA} + \mathrm{FVA} + \mathrm{MVA} + \mathrm{KVA}
-$$
+```
 
-$$
+```math
 P = Ke^{-rT}\Phi(-d_2) - S_0e^{-qT}\Phi(-d_1), \qquad
 d_{1,2} = \frac{\ln(S_0/K) + (r - q \pm \tfrac{1}{2}\sigma^{2})T}{\sigma\sqrt{T}}
-$$
+```
 
 ## Output indices
 
