@@ -1,0 +1,48 @@
+MinimumCore:
+      Class: C0Pro
+      Microarchitecture: Athens
+      CorrelationTracking: Autocorrelation
+      MemorySize: 256000
+      Precision: 64
+
+TraceVariables:
+    - File: "main.c"
+      LineNumber: 75
+      Expression: "outputVariables[0:7]"
+
+BenchmarkingVariables:
+    - VariableName: outputVariables[0]
+      VariableDescription: CVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 0
+    - VariableName: outputVariables[1]
+      VariableDescription: DVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 1
+    - VariableName: outputVariables[2]
+      VariableDescription: Bilateral CVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 2
+    - VariableName: outputVariables[3]
+      VariableDescription: FVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 3
+    - VariableName: outputVariables[4]
+      VariableDescription: MVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 4
+    - VariableName: outputVariables[5]
+      VariableDescription: KVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 5
+    - VariableName: outputVariables[6]
+      VariableDescription: Total xVA
+      OutputObject: Scalar
+      CommandLineArguments: -S 6
+    - VariableName: outputVariables[7]
+      VariableDescription: European Put
+      OutputObject: Scalar
+      CommandLineArguments: -S 7
+
+BenchmarkingAllOutputs:
+    - CommandLineArguments: -S 8
