@@ -298,7 +298,6 @@ academic papers, regulatory documents, and textbooks. Entries link to a
 canonical source where one is freely resolvable, and carry full bibliographic
 detail otherwise. Nothing is redistributed here.
 
-<!-- vale Vale.Spelling = NO -->
 ### Monte Carlo and numerical methods
 Gaussian variates come from `UxHwDoubleGaussDist()`. On SCCE this is a
 distributional primitive, and natively the compatibility submodule draws them
@@ -348,4 +347,3 @@ with GSL, so the repository carries no random number generator of its own.
 - [Signaloid Developer Documentation](https://docs.signaloid.io)
 - [UxHw API Reference](https://docs.signaloid.io/docs/uxhw-api/)
 
-<!-- vale Vale.Spelling = YES -->
