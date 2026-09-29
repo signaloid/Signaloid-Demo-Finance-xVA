@@ -8,9 +8,9 @@ This application computes counterparty credit risk valuation adjustments (xVA)
 using Monte Carlo simulation, with support for Signaloid's distributional
 arithmetic (UxHw) as an alternative to traditional Monte Carlo sampling. The
 framework computes CVA, DVA, FVA, MVA, and KVA for a forward contract on an
-equity underlying, using Geometric Brownian Motion path simulation.  The
+equity underlying, using Geometric Brownian Motion path simulation. The
 repository has been structured to fit within the
-[Signaloid UxHw benchmarking template](https://github.com/signaloid),
+[Signaloid UxHw benchmarking template](https://github.com/signaloid/Signaloid-Demo-Benchmarking-C-Template.git),
 allowing direct comparison between traditional Monte Carlo sampling and
 Signaloid's single-pass uncertainty tracking on the Signaloid Cloud
 Compute Engine (SCCE).
@@ -19,7 +19,7 @@ Compute Engine (SCCE).
 ## Cloning the repository
 
 ```bash
-git clone --recursive <repository-url>
+git clone --recursive https://github.com/signaloid/Signaloid-Demo-Finance-xVA.git
 ```
 
 To update all submodules:
@@ -43,9 +43,8 @@ make local-run                # Build and run all 8 outputs with timing
 
 # Run individual outputs:
 ./demo-native-mc -M 10000 -S 0 -T    # CVA with 10000 MC iterations and timing
-./demo-native-mc -M 10000 -S 7 -T    # European Put
-./demo-native-mc -S 0                # UxHw kernel (natively one random path)
-./demo-native-mc -M 10000 -S 0 -j    # JSON output
+./demo-native-mc -M 10000 -S 7       # European Put with 10000 MC iterations
+./demo-native-mc -M 10000 -S 0 -j    # CVA with 10000 MC iterations and JSON output
 ```
 
 ## Overview
@@ -299,6 +298,7 @@ academic papers, regulatory documents, and textbooks. Entries link to a
 canonical source where one is freely resolvable, and carry full bibliographic
 detail otherwise. Nothing is redistributed here.
 
+<!-- vale Vale.Spelling = NO -->
 ### Monte Carlo and numerical methods
 Gaussian variates come from `UxHwDoubleGaussDist()`. On SCCE this is a
 distributional primitive, and natively the compatibility submodule draws them
@@ -308,7 +308,7 @@ with GSL, so the repository carries no random number generator of its own.
   Used in: `xva-gbm.c` (GBM path simulation).
 
 ### Options pricing and credit risk
-- Black, F. & Scholes, M. (1973). "The Pricing of Options and Corporate Liabilities." *Journal of Political Economy*, 81(3), 637-654.
+- Black, F. and Scholes, M. (1973). "The Pricing of Options and Corporate Liabilities." *Journal of Political Economy*, 81(3), 637-654.
   [Source](https://doi.org/10.1086/260062)
   Used in: `xva-utils.c` (Black-Scholes formula for European options).
 - Merton, R.C. (1974). "On the Pricing of Corporate Debt: The Risk Structure of Interest Rates." *Journal of Finance*, 29(2), 449-470.
@@ -320,14 +320,14 @@ with GSL, so the repository carries no random number generator of its own.
 ### xVA and valuation adjustments
 - Gregory, J. (2020). *The xVA Challenge: Counterparty Risk, Funding, Collateral, Capital and Initial Margin.* 4th Ed., Wiley.
   Primary reference for: `xva-cva.c`, `xva-dva.c`, `xva-fva.c`, `xva-mva.c`, `xva-kva.c`, `xva-exposure.c`.
-- Albanese, C., Caenazzo, S. & Crepey, S. (2016). "Capital Valuation Adjustment and Funding Valuation Adjustment." arXiv:1603.03012.
+- Albanese, C., Caenazzo, S. and Crepey, S. (2016). "Capital Valuation Adjustment and Funding Valuation Adjustment." arXiv:1603.03012.
   [Source](https://arxiv.org/abs/1603.03012)
   Used in: `xva-kva.c` (KVA and FVA framework).
-- Green, A., Kenyon, C. & Dennis, C. (2014). "KVA: Capital Valuation Adjustment by Replication." *Risk Magazine*, December 2014.
+- Green, A., Kenyon, C. and Dennis, C. (2014). "KVA: Capital Valuation Adjustment by Replication." *Risk Magazine*, December 2014.
   Used in: `xva-kva.c` (KVA computation).
-- Burgard, C. & Kjaer, M. (2011). "Partial Differential Equation Representations of Derivatives with Bilateral Counterparty Risk and Funding Costs." *Journal of Credit Risk*, 7(3), 1-19.
+- Burgard, C. and Kjaer, M. (2011). "Partial Differential Equation Representations of Derivatives with Bilateral Counterparty Risk and Funding Costs." *Journal of Credit Risk*, 7(3), 1-19.
   Used in: `xva-dva.c` (bilateral counterparty risk).
-- Pykhtin, M. & Zhu, S. (2007). "A Guide to Modeling Counterparty Credit Risk." *GARP Risk Review*, July/August 2007.
+- Pykhtin, M. and Zhu, S. (2007). "A Guide to Modeling Counterparty Credit Risk." *GARP Risk Review*, July/August 2007.
   Used in: `xva-exposure.c`, `xva-cva.c` (exposure and CVA methodology).
 
 ### Regulatory documents
@@ -348,3 +348,4 @@ with GSL, so the repository carries no random number generator of its own.
 - [Signaloid Developer Documentation](https://docs.signaloid.io)
 - [UxHw API Reference](https://docs.signaloid.io/docs/uxhw-api/)
 
+<!-- vale Vale.Spelling = YES -->
