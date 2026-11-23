@@ -30,8 +30,9 @@
  *	across the path ensemble.
  *
  *	The distributional counterpart lives in `xva-uxhw.c`; the two share
- *	the allocation helpers in `xva-gbm.c` and `xva-exposure.c` and the
- *	mode-agnostic xVA metric computations in `xva-cva.c` and friends.
+ *	the GBM step constants in `xva-gbm.c`, the mark-to-market in
+ *	`xva-exposure.c` and the mode-agnostic xVA metric computations in
+ *	`xva-cva.c` and friends.
  */
 
 #include "xva-config.h"
@@ -40,86 +41,59 @@
 #include <stdlib.h>
 
 int
-xvaSimulateGbmPathsMonteCarlo(
-	XvaSimulationPaths *    paths,
-	const XvaMarketData *   market,
-	size_t                  numPathsRequested)
-{
-	XvaGbmPathParameters    parameters;
-
-	if (xvaAllocateGbmPaths(paths, market, numPathsRequested, &parameters) != 0)
-	{
-		return EXIT_FAILURE;
-	}
-
-	/*
-	 *	Generate paths using exact GBM simulation. Each path is an
-	 *	independent scalar realisation: UxHwDoubleGaussDist() returns a
-	 *	fresh pseudo-random standard normal sample on every call under
-	 *	the native compatibility layer.
-	 */
-	for (size_t pathIdx = 0; pathIdx < numPathsRequested; pathIdx++)
-	{
-		for (size_t stepIdx = 1; stepIdx <= parameters.numSteps; stepIdx++)
-		{
-			double  zz = UxHwDoubleGaussDist(0.0, 1.0);
-
-			paths->paths[pathIdx][stepIdx] = paths->paths[pathIdx][stepIdx - 1] *
-			                                 exp(parameters.driftDt + parameters.diffusionSqrtDt * zz);
-		}
-	}
-
-	return 0;
-}
-
-int
 xvaComputeExposureProfileMonteCarlo(
 	XvaExposureProfile *        profile,
-	const XvaSimulationPaths *  paths,
 	const XvaMarketData *       market,
-	double                      strike)
+	double                      strike,
+	size_t                      numPaths)
 {
-	size_t      numSteps;
-	size_t      numPaths;
-	double      riskFreeRate;
-	double      dividendYield;
-	double      maturity;
-	double      dt;
-	double *    positiveExposures;
+	XvaGbmPathParameters    parameters;
+	double                  riskFreeRate;
+	double                  dividendYield;
+	double                  maturity;
+	double *                spotPrices;
+	double *                positiveExposures;
 
-	if (profile == NULL || paths == NULL || market == NULL)
+	if (profile == NULL || market == NULL || numPaths == 0)
 	{
 		return EXIT_FAILURE;
 	}
 
-	numSteps        = paths->numSteps;
-	numPaths        = paths->numPaths;
+	xvaGetGbmPathParameters(market, &parameters);
+
 	riskFreeRate    = market->riskFreeRate;
 	dividendYield   = market->dividendYield;
 	maturity        = market->maturity;
-	dt              = paths->dt;
 
-	if (xvaAllocateExposureProfile(profile, numSteps) != 0)
+	profile->numTimeSteps = parameters.numSteps + 1;  /*	Include t=0 */
+
+	/*
+	 *	The paths are advanced one step at a time and each step is folded
+	 *	into the exposure profile straight away, so only the current spot
+	 *	of each path is kept, rather than the whole
+	 *	`numPaths` x `numSteps + 1` path matrix. A second array of the same
+	 *	size holds the positive exposures for the cross-sectional PFE
+	 *	quantile; it is separate because the quantile sorts it in place.
+	 *	Both arrays come from one allocation.
+	 */
+	spotPrices = (double *) malloc(2 * numPaths * sizeof(double));
+
+	if (spotPrices == NULL)
 	{
 		return EXIT_FAILURE;
 	}
 
-	/*
-	 *	Temporary array for the cross-sectional PFE quantile.
-	 */
-	positiveExposures = (double *) malloc(numPaths * sizeof(double));
+	positiveExposures = spotPrices + numPaths;
 
-	if (positiveExposures == NULL)
+	for (size_t jj = 0; jj < numPaths; jj++)
 	{
-		xvaFreeExposureProfile(profile);
-
-		return EXIT_FAILURE;
+		spotPrices[jj] = market->spotPrice;
 	}
 
 	/*
 	 *	Compute exposure at each time step
 	 */
-	for (size_t ii = 0; ii < numSteps; ii++)
+	for (size_t ii = 0; ii < profile->numTimeSteps; ii++)
 	{
 		double  sumMtm      = 0.0;
 		double  sumPositive = 0.0;
@@ -131,7 +105,7 @@ xvaComputeExposureProfileMonteCarlo(
 		/*
 		 *	Time to maturity at this step
 		 */
-		currentTime     = ii * dt;
+		currentTime     = ii * parameters.dt;
 		timeToMaturity  = maturity - currentTime;
 
 		if (timeToMaturity < 0.0)
@@ -145,16 +119,30 @@ xvaComputeExposureProfileMonteCarlo(
 		 */
 		for (size_t jj = 0; jj < numPaths; jj++)
 		{
-			double  spotPrice = paths->paths[jj][ii];
 			double  mtmValue;
 			double  positiveExp;
 			double  negativeExp;
 
 			/*
+			 *	Advance the path from the previous step using exact
+			 *	GBM simulation. Each path is an independent scalar
+			 *	realisation: UxHwDoubleGaussDist() returns a fresh
+			 *	pseudo-random standard normal sample on every call
+			 *	under the native compatibility layer. Step 0 is the
+			 *	deterministic spot.
+			 */
+			if (ii > 0)
+			{
+				double zz = UxHwDoubleGaussDist(0.0, 1.0);
+
+				spotPrices[jj] *= exp(parameters.driftDt + parameters.diffusionSqrtDt * zz);
+			}
+
+			/*
 			 *	Compute mark-to-market value.
 			 *	Using forward contract as example (easily extensible)
 			 */
-			mtmValue = xvaComputeForwardMtm(spotPrice, strike, riskFreeRate, dividendYield, timeToMaturity);
+			mtmValue = xvaComputeForwardMtm(spotPrices[jj], strike, riskFreeRate, dividendYield, timeToMaturity);
 
 			/*
 			 *	`mtmValue` is a single scalar sample, so max(V, 0)
@@ -199,7 +187,7 @@ xvaComputeExposureProfileMonteCarlo(
 			xvaQuantile(positiveExposures, numPaths, kXvaPfeQuantile);
 	}
 
-	free(positiveExposures);
+	free(spotPrices);
 
 	return 0;
 }

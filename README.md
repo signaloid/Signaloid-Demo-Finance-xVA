@@ -2,7 +2,7 @@
 [<img src="https://assets.signaloid.io/add-to-signaloid-cloud-logo-light-latest.png#gh-light-mode-only" alt="[Add to signaloid.io]" height="30">](https://signaloid.io/repositories?connect=https://github.com/signaloid/Signaloid-Demo-Finance-xVA#gh-light-mode-only)
 
 
-# xVA Monte Carlo Simulation with Signaloid UxHw® Support
+# Monte Carlo Simulation of Valuation Adjustments with Signaloid UxHw® Support
 
 This application computes counterparty credit risk valuation adjustments (xVA)
 using Monte Carlo simulation, with support for Signaloid's distributional
@@ -12,7 +12,7 @@ equity underlying, using Geometric Brownian Motion path simulation. The
 repository has been structured to fit within the
 [Signaloid UxHw benchmarking template](https://github.com/signaloid/Signaloid-Demo-Benchmarking-C-Template.git),
 allowing direct comparison between traditional Monte Carlo sampling and
-Signaloid's single-pass uncertainty tracking on the Signaloid Cloud
+Signaloid's single-pass distribution arithmetic on the Signaloid Cloud
 Compute Engine (SCCE).
 
 
@@ -56,7 +56,7 @@ UxHw mode.
 
 In UxHw single-shot mode (no `-M`, on the Signaloid Cloud Compute Engine), the
 application simulates one path whose values carry full distributional
-information. Signaloid's uncertainty-tracking hardware propagates that
+information. Signaloid's distribution arithmetic hardware propagates that
 distribution through the exposure computation in a single pass, and the
 expectation is then extracted so that each output is a single scalar. Natively
 the same mode runs against the compatibility layer and yields one random path.
@@ -145,7 +145,7 @@ survival of the party that bears it:
 - \underbrace{\sum_{i} \left|\mathrm{ENE}(t_i)\right|Q_B(t_i)\,s_l\,\mathrm{DF}(t_i)\,\Delta t}_{\text{FBA}}
 ```
 
-The demo's funding data lends at the risk-free rate, so $s_l = 0$ and only the
+The demo's funding data lends at the risk-free rate, so the lending spread is zero and only the
 FCA term contributes.
 
 MVA charges the funding spread against posted initial margin. The demo
@@ -224,30 +224,28 @@ make local-run                # Build and run all 8 outputs with timing
 
 ### Command-line options
 ```
-Common options:
-  -S <index>       Select output (0-7, see table above). 8, or no -S,
-                   computes all outputs and is allowed in UxHw mode only
-  -M <iterations>  Monte Carlo mode with N paths. N is required and has no
-                   default. Without -M the UxHw kernel runs
-  -i <path>        Read the volatility distribution from a CSV file
-                   (UxHw mode only, see inputs/README.md)
-  -o <path>        Write the outputs to a CSV file
-  -T               Enable timing
-  -b               Benchmarking output format
-  -j               JSON output mode
-  -v               Verbose (accepted but not supported by this demo)
-  -h               Help
-
-xVA-specific options:
-  -f <volatility>        Annualized volatility (default: 0.20)
-  -s <spot-price>        Spot price (default: 100.0)
-  -r <risk-free-rate>    Risk-free rate (default: 0.05)
-  -d <dividend-yield>    Dividend yield (default: 0.02)
-  -m <maturity>          Time to maturity in years (default: 5.0)
-  -c <credit-spread>     Counterparty credit spread (default: 0.015)
-  -e <own-credit-spread> Own credit spread (default: 0.01)
-  -k <strike-price>      Strike price (default: 100.0)
+Usage: Valid command-line arguments are:
+	[-i, --input <Path to input CSV file : str>] (Read inputs from file.)
+	[-o, --output <Path to output CSV file : str>] (Specify the output file.)
+	[-S, --select-output <output : int>] (Compute 0-indexed output, by default 0. Set to the number of outputs to compute all outputs.)
+	[-M, --multiple-executions <Number of executions : int (Default: 1)>] (Repeatedly execute kernel for benchmarking. Also enables timing.)
+	[-T, --time] (Timing mode: Times and prints the timing of the kernel execution.)
+	[-v, --verbose] (Verbose mode: Prints extra information about demo execution.)
+	[-j, --json] (Print output in JSON format.)
+	[-h, --help] (Display this help message.)
+	[-f, --volatility <annualized volatility: double (Default: 0.200000)>]
+	[-s, --spot-price <spot price: double (Default: 100.000000)>]
+	[-r, --risk-free-rate <risk-free rate: double (Default: 0.050000)>]
+	[-d, --dividend-yield <dividend yield: double (Default: 0.020000)>]
+	[-m, --maturity <time to maturity in years: double (Default: 5.000000)>]
+	[-c, --credit-spread <counterparty credit spread: double (Default: 0.015000)>]
+	[-e, --own-credit-spread <own credit spread: double (Default: 0.010000)>]
+	[-k, --strike-price <strike price: double (Default: 100.000000)>]
 ```
+
+Without `-S`, or with `-S 8`, the demo computes all outputs. This is allowed
+in UxHw mode only. Monte Carlo mode needs `-M N` and a single output. The
+`-v` option is accepted but not supported by this demo.
 
 ## Architecture
 
@@ -261,8 +259,8 @@ formed.
 - **UxHw single-shot mode** (no `-M`): `calculateOutputUxHw()` in `kernel.c`, backed by `xva-uxhw.c`. Simulates one distributional GBM path on SCCE, where `UxHwDoubleGaussDist()` yields a full distribution and `UxHwDoubleGetIndependentCopy()` breaks inter-step correlations. The exposure profile integrates that distribution out in a single pass: EE, EPE and ENE are first moments and PFE is the high quantile of the positive-exposure distribution.
 
 Forming the expectation before the xVA metrics matters for the nonlinear ones.
-KVA's effective EPE is a running maximum over the *expected* exposure profile,
-so averaging per-path xVAs would instead compute a different, biased
+the effective EPE in KVA is a running maximum over the *expected* exposure profile,
+so averaging per-path xVA values would instead compute a different, biased
 $\mathbb{E}[\max(\cdot, 0)]$.
 
 ### Module flow
@@ -274,10 +272,10 @@ Input (volatility)
         -> Output
 ```
 
-### Uncertainty model
+### Distribution model
 Volatility is a calibrated market input, held at a fixed deterministic value
 so that the Monte Carlo and UxHw modes compute the same production xVA. The
-stochasticity that drives exposure is the Brownian path ensemble, meaning the
+randomness that drives exposure is the Brownian path ensemble, meaning the
 per-step `UxHwDoubleGaussDist()` draws in the GBM simulation, rather than the
 volatility itself.
 
@@ -316,7 +314,7 @@ with GSL, so the repository carries no random number generator of its own.
 - Hull, J.C. (2017). *Options, Futures, and Other Derivatives.* 10th Ed., Pearson.
   Used in: `xva-exposure.c` (forward contract valuation, Chapter 5).
 
-### xVA and valuation adjustments
+### Valuation adjustments
 - Gregory, J. (2020). *The xVA Challenge: Counterparty Risk, Funding, Collateral, Capital and Initial Margin.* 4th Ed., Wiley.
   Primary reference for: `xva-cva.c`, `xva-dva.c`, `xva-fva.c`, `xva-mva.c`, `xva-kva.c`, `xva-exposure.c`.
 - Albanese, C., Caenazzo, S. and Crepey, S. (2016). "Capital Valuation Adjustment and Funding Valuation Adjustment." arXiv:1603.03012.
@@ -346,4 +344,3 @@ with GSL, so the repository carries no random number generator of its own.
 ### Signaloid documentation
 - [Signaloid Developer Documentation](https://docs.signaloid.io)
 - [UxHw API Reference](https://docs.signaloid.io/docs/uxhw-api/)
-

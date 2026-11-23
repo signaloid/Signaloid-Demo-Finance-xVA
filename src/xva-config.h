@@ -241,23 +241,16 @@ typedef struct
  */
 typedef struct
 {
-	double *    expectedExposure;           /*	EE[t] for each time step */
-	double *    expectedPositiveExposure;   /*	EPE[t] = E[max(V,0)] */
-	double *    expectedNegativeExposure;   /*	ENE[t] = E[min(V,0)] */
-	double *    potentialFutureExposure;    /*	PFE[t] at specified quantile */
-	size_t      numTimeSteps;               /*	Number of time steps */
+	/*
+	 *	The time grid has a fixed `kXvaNumTimeSteps` steps, so the profile
+	 *	(t = 0 included) has a fixed size and needs no heap allocation.
+	 */
+	double      expectedExposure[kXvaNumTimeSteps + 1];           /*	EE[t] for each time step */
+	double      expectedPositiveExposure[kXvaNumTimeSteps + 1];   /*	EPE[t] = E[max(V,0)] */
+	double      expectedNegativeExposure[kXvaNumTimeSteps + 1];   /*	ENE[t] = E[min(V,0)] */
+	double      potentialFutureExposure[kXvaNumTimeSteps + 1];    /*	PFE[t] at specified quantile */
+	size_t      numTimeSteps;               /*	Number of time steps, including t=0 */
 } XvaExposureProfile;
-
-/*
- *	Simulation paths storage structure
- */
-typedef struct
-{
-	double * *  paths;          /*	paths[pathIndex][timeStep] */
-	size_t      numPaths;       /*	Number of simulation paths */
-	size_t      numSteps;       /*	Number of time steps per path */
-	double      dt;             /*	Time step size */
-} XvaSimulationPaths;
 
 /*
  *	Per-step constants of the exact GBM solution, shared by the Monte Carlo
@@ -268,6 +261,7 @@ typedef struct
 	double  driftDt;            /*	(r - q - sigma^2/2) * dt */
 	double  diffusionSqrtDt;    /*	sigma * sqrt(dt) */
 	size_t  numSteps;           /*	Number of steps, excluding t=0 */
+	double  dt;                 /*	Time step size */
 } XvaGbmPathParameters;
 
 /* ========================================================================
@@ -284,25 +278,15 @@ typedef struct
  *	call; on the Signaloid Cloud Compute Engine the same call yields a
  *	distributional value carried through the computation.
  */
-int
-xvaAllocateGbmPaths(
-	XvaSimulationPaths *    paths,
-	const XvaMarketData *   market,
-	size_t                  numPaths,
-	XvaGbmPathParameters *  parameters);
-
 void
-xvaFreeSimulationPaths(XvaSimulationPaths * paths);
+xvaGetGbmPathParameters(
+	const XvaMarketData *   market,
+	XvaGbmPathParameters *  parameters);
 
 /*
  *	Exposure Calculations (xva-exposure.c)
  *	Reference: Gregory (2020), Chapter 10
  */
-int
-xvaAllocateExposureProfile(
-	XvaExposureProfile *    profile,
-	size_t                  numSteps);
-
 double
 xvaComputeForwardMtm(
 	double  spot,
@@ -310,9 +294,6 @@ xvaComputeForwardMtm(
 	double  riskFreeRate,
 	double  dividendYield,
 	double  timeToMaturity);
-
-void
-xvaFreeExposureProfile(XvaExposureProfile * profile);
 
 /*
  *	Credit Valuation Adjustment (xva-cva.c)

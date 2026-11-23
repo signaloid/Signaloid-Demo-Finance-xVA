@@ -24,7 +24,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include "kernel.h"
-#include "utilities.h"
 #include "xva-config.h"
 #include "xva-monte-carlo.h"
 #include "xva-uxhw.h"
@@ -52,34 +51,32 @@ typedef struct
 
 /**
  *	@brief	Build the market, credit, funding, and capital data from the
- *		command-line arguments and input variables.
+ *		model parameters and input variables.
  *
- *	@param	arguments	: Pointer to command line arguments struct.
- *	@param	inputVariables	: The input variables.
+ *	@param	parameters	: The model parameters and input variables.
  *	@param	model		: Output: the assembled model data.
  */
 static void
 buildModelData(
-	CommandLineArguments *  arguments,
-	double *                inputVariables,
-	XvaModelData *          model)
+	const KernelParameters *    parameters,
+	XvaModelData *              model)
 {
 	/*
-	 *	Build market data from arguments and input variables.
-	 *	Volatility comes from inputVariables. It is a scalar unless the
-	 *	UxHw kernel is run with a CSV of volatility samples (`-i`), in
-	 *	which case it is a distribution.
+	 *	Build market data from the model parameters and input variables.
+	 *	Volatility comes from `parameters->inputVariables`. It is a
+	 *	scalar unless the UxHw kernel is run with a CSV of volatility
+	 *	samples (`-i`), in which case it is a distribution.
 	 */
-	model->market.spotPrice     = arguments->spotPrice;
-	model->market.riskFreeRate  = arguments->riskFreeRate;
-	model->market.dividendYield = arguments->dividendYield;
-	model->market.volatility    = inputVariables[kXvaInputIndexVolatility];
-	model->market.maturity      = arguments->maturity;
+	model->market.spotPrice     = parameters->spotPrice;
+	model->market.riskFreeRate  = parameters->riskFreeRate;
+	model->market.dividendYield = parameters->dividendYield;
+	model->market.volatility    = parameters->inputVariables[kXvaInputIndexVolatility];
+	model->market.maturity      = parameters->maturity;
 
 	/*
 	 *	Build counterparty credit data
 	 */
-	model->cptyCredit.creditSpread  = arguments->creditSpread;
+	model->cptyCredit.creditSpread  = parameters->creditSpread;
 	model->cptyCredit.recoveryRate  = kXvaDemoDefaultRecoveryRate;
 	model->cptyCredit.hazardRate    = xvaHazardRateFromSpread(
 		model->cptyCredit.creditSpread,
@@ -89,7 +86,7 @@ buildModelData(
 	/*
 	 *	Build own credit data
 	 */
-	model->ownCredit.creditSpread   = arguments->ownCreditSpread;
+	model->ownCredit.creditSpread   = parameters->ownCreditSpread;
 	model->ownCredit.recoveryRate   = kXvaDemoDefaultRecoveryRate;
 	model->ownCredit.hazardRate     = xvaHazardRateFromSpread(
 		model->ownCredit.creditSpread,
@@ -102,8 +99,8 @@ buildModelData(
 	 *	and FVA reduces to the funding cost (FCA).
 	 */
 	model->funding.fundingSpread    = kXvaDemoDefaultFundingSpread;
-	model->funding.borrowingRate    = arguments->riskFreeRate + model->funding.fundingSpread;
-	model->funding.lendingRate      = arguments->riskFreeRate;
+	model->funding.borrowingRate    = parameters->riskFreeRate + model->funding.fundingSpread;
+	model->funding.lendingRate      = parameters->riskFreeRate;
 
 	/*
 	 *	Build capital data
@@ -121,20 +118,19 @@ buildModelData(
  *		expectation across scenarios was already formed when the
  *		exposure profile was built.
  *
- *	@param	arguments	: Pointer to command line arguments struct.
+ *	@param	outputSelect	: Which output to compute, or `kXvaOutputIndexMax` for all.
  *	@param	model		: The market, credit, funding, and capital data.
  *	@param	profile		: The exposure profile.
  *	@param	outputVariables	: The output variables.
  */
 static void
 computeXvaMetrics(
-	CommandLineArguments *      arguments,
+	size_t                      outputSelect,
 	const XvaModelData *        model,
 	const XvaExposureProfile *  profile,
 	double *                    outputVariables)
 {
-	bool    calculateAllOutputs = (arguments->common.outputSelect == kXvaOutputIndexMax);
-	size_t  outputSelect        = arguments->common.outputSelect;
+	bool calculateAllOutputs = (outputSelect == kXvaOutputIndexMax);
 
 	if (calculateAllOutputs || (outputSelect == kXvaOutputIndexCva))
 	{
@@ -191,30 +187,30 @@ computeXvaMetrics(
  *	@brief	Whether an output index is selected, either on its own or as part
  *		of a request for all outputs.
  *
- *	@param	arguments	: Pointer to command line arguments struct.
+ *	@param	outputSelect	: The selected output, or `kXvaOutputIndexMax` for all.
  *	@param	outputIndex	: The 0-indexed output.
  *	@return			: `true` if the output should be computed.
  */
 static bool
 isOutputSelected(
-	const CommandLineArguments *    arguments,
-	size_t                          outputIndex)
+	size_t  outputSelect,
+	size_t  outputIndex)
 {
-	return (arguments->common.outputSelect == kXvaOutputIndexMax) ||
-	       (arguments->common.outputSelect == outputIndex);
+	return (outputSelect == kXvaOutputIndexMax) ||
+	       (outputSelect == outputIndex);
 }
 
 void
 calculateOutputMonteCarlo(
-	CommandLineArguments *  arguments,
-	double *                inputVariables,
-	double *                outputVariables)
+	const KernelParameters *    parameters,
+	size_t                      outputSelect,
+	size_t                      numberOfMonteCarloIterations,
+	double *                    outputVariables)
 {
 	XvaModelData        model;
-	XvaSimulationPaths  paths;
 	XvaExposureProfile  profile;
 
-	buildModelData(arguments, inputVariables, &model);
+	buildModelData(parameters, &model);
 
 	/*
 	 *	Simulate `numberOfMonteCarloIterations` independent Brownian paths.
@@ -226,53 +222,38 @@ calculateOutputMonteCarlo(
 	 *	Averaging per-path xVAs would instead compute E[max(...)], a
 	 *	different, biased value.
 	 */
-	if (xvaSimulateGbmPathsMonteCarlo(&paths, &model.market, arguments->common.numberOfMonteCarloIterations) != 0)
-	{
-		fprintf(stderr, "Error: GBM path simulation failed.\n");
-
-		return;
-	}
-
-	if (xvaComputeExposureProfileMonteCarlo(&profile, &paths, &model.market, arguments->strikePrice) != 0)
+	if (xvaComputeExposureProfileMonteCarlo(&profile, &model.market, parameters->strikePrice, numberOfMonteCarloIterations) != 0)
 	{
 		fprintf(stderr, "Error: Exposure profile computation failed.\n");
-		xvaFreeSimulationPaths(&paths);
 
 		return;
 	}
 
-	computeXvaMetrics(arguments, &model, &profile, outputVariables);
+	computeXvaMetrics(outputSelect, &model, &profile, outputVariables);
 
 	/*
 	 *	The European put never passes through the exposure profile, so it
 	 *	is computed per mode rather than in the shared helper above.
 	 */
-	if (isOutputSelected(arguments, kXvaOutputIndexEuropeanPut))
+	if (isOutputSelected(outputSelect, kXvaOutputIndexEuropeanPut))
 	{
 		outputVariables[kXvaOutputIndexEuropeanPut] =
-			xvaEuropeanPutMonteCarlo(&model.market, arguments->strikePrice);
+			xvaEuropeanPutMonteCarlo(&model.market, parameters->strikePrice);
 	}
-
-	/*
-	 *	Free allocated memory
-	 */
-	xvaFreeExposureProfile(&profile);
-	xvaFreeSimulationPaths(&paths);
 
 	return;
 }
 
 void
 calculateOutputUxHw(
-	CommandLineArguments *  arguments,
-	double *                inputVariables,
-	double *                outputVariables)
+	const KernelParameters *    parameters,
+	size_t                      outputSelect,
+	double *                    outputVariables)
 {
 	XvaModelData        model;
-	XvaSimulationPaths  paths;
 	XvaExposureProfile  profile;
 
-	buildModelData(arguments, inputVariables, &model);
+	buildModelData(parameters, &model);
 
 	/*
 	 *	One distributional path represents the whole ensemble: the exposure
@@ -281,22 +262,14 @@ calculateOutputUxHw(
 	 *	kernel reaches by averaging, and every xVA metric below is then
 	 *	computed once from it.
 	 */
-	if (xvaSimulateGbmPathsUxHw(&paths, &model.market) != 0)
-	{
-		fprintf(stderr, "Error: GBM path simulation failed.\n");
-
-		return;
-	}
-
-	if (xvaComputeExposureProfileUxHw(&profile, &paths, &model.market, arguments->strikePrice) != 0)
+	if (xvaComputeExposureProfileUxHw(&profile, &model.market, parameters->strikePrice) != 0)
 	{
 		fprintf(stderr, "Error: Exposure profile computation failed.\n");
-		xvaFreeSimulationPaths(&paths);
 
 		return;
 	}
 
-	computeXvaMetrics(arguments, &model, &profile, outputVariables);
+	computeXvaMetrics(outputSelect, &model, &profile, outputVariables);
 
 	/*
 	 *	The European put never passes through the exposure profile, so
@@ -304,17 +277,11 @@ calculateOutputUxHw(
 	 *	moment so that a distributional volatility input does not leak a
 	 *	distribution into an output declared scalar.
 	 */
-	if (isOutputSelected(arguments, kXvaOutputIndexEuropeanPut))
+	if (isOutputSelected(outputSelect, kXvaOutputIndexEuropeanPut))
 	{
 		outputVariables[kXvaOutputIndexEuropeanPut] =
-			xvaEuropeanPutUxHw(&model.market, arguments->strikePrice);
+			xvaEuropeanPutUxHw(&model.market, parameters->strikePrice);
 	}
-
-	/*
-	 *	Free allocated memory
-	 */
-	xvaFreeExposureProfile(&profile);
-	xvaFreeSimulationPaths(&paths);
 
 	return;
 }

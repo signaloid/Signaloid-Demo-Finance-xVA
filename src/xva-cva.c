@@ -73,11 +73,6 @@ xvaComputeCva(
 		return 0.0;
 	}
 
-	if (profile->expectedPositiveExposure == NULL)
-	{
-		return 0.0;
-	}
-
 	double  rr          = market->riskFreeRate;
 	double  lambda      = credit->hazardRate;
 	double  recovery    = credit->recoveryRate;
