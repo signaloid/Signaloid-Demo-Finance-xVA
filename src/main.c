@@ -30,50 +30,24 @@
 #include "utilities.h"
 #include "kernel.h"
 
+#ifdef NO_OS_AVAILABLE
 
-/**
- *	@brief	Set the input variables from the command-line arguments, falling back to the demo defaults.
- *
- *	@param	arguments	: Pointer to command line arguments struct.
- *	@param	inputVariables	: The input variables.
- */
-static void
-setInputVariables(
-	CommandLineArguments *  arguments,
-	double *                inputVariables)
-{
-	/*
-	 *	Volatility is a calibrated market input, held at a fixed
-	 *	deterministic value so that the Monte Carlo and UxHw modes compute
-	 *	the same production xVA. The stochasticity that drives exposure is
-	 *	the Brownian path ensemble (the per-step UxHwDoubleGaussDist draws
-	 *	in the GBM simulation), not the volatility itself.
-	 */
-	if (arguments->isInputVariableSet[kXvaInputIndexVolatility])
-	{
-		inputVariables[kXvaInputIndexVolatility] = arguments->inputVariables[kXvaInputIndexVolatility];
-	}
-	else
-	{
-		inputVariables[kXvaInputIndexVolatility] = kXvaDemoDefaultVolatility;
-	}
-
-	return;
-}
+void
+returnZeroNoOS(void);
+#endif
 
 int
 main(int argc, char *  argv[])
 {
-	CommandLineArguments    arguments = (CommandLineArguments) { 0 };
-	const char *            applicationDescription =
+	CommandLineArguments    arguments               = (CommandLineArguments) { 0 };
+	const char *            applicationDescription  =
 		"Computes credit risk valuation adjustments (xVA) using "
 		"Geometric Brownian Motion path simulation.";
-	double                  inputVariables[kXvaInputIndexMax];
-	const char *            expectedInputHeaders[kXvaInputIndexMax] = {
+	const char *    expectedInputHeaders[kXvaInputIndexMax] = {
 		"volatility"
 	};
-	double                  outputVariables[kXvaOutputIndexMax];
-	const char *            outputVariableNames[kXvaOutputIndexMax] = {
+	double          outputVariables[kXvaOutputIndexMax] = { 0 };
+	const char *    outputVariableNames[kXvaOutputIndexMax] = {
 		"CVA",
 		"DVA",
 		"BCVA",
@@ -83,7 +57,7 @@ main(int argc, char *  argv[])
 		"TotalXVA",
 		"EuropeanPut"
 	};
-	const char *            outputVariableDescriptions[kXvaOutputIndexMax] = {
+	const char *    outputVariableDescriptions[kXvaOutputIndexMax] = {
 		"Credit Valuation Adjustment",
 		"Debit Valuation Adjustment",
 		"Bilateral CVA (CVA - DVA)",
@@ -96,14 +70,14 @@ main(int argc, char *  argv[])
 	/*
 	 *	Every xVA output is a single converged scalar.
 	 */
-	kOutputVariableTypeIndex outputVariableTypes[kXvaOutputIndexMax] = {
+	kOutputVariableTypeIndex    outputVariableTypes[kXvaOutputIndexMax] = {
 		kOutputVariableTypeScalar, kOutputVariableTypeScalar, kOutputVariableTypeScalar, kOutputVariableTypeScalar,
 		kOutputVariableTypeScalar, kOutputVariableTypeScalar, kOutputVariableTypeScalar, kOutputVariableTypeScalar,
 	};
-	double *                monteCarloOutputSamples         = NULL;
-	clock_t                 start                           = 0;
-	clock_t                 end                             = 0;
-	double                  cpuTimeUsedInSeconds            = 0.0;
+	double *                    monteCarloOutputSamples = NULL;
+	clock_t                     start                   = 0;
+	clock_t                     end                     = 0;
+	double                      cpuTimeUsedInSeconds    = 0.0;
 
 	/*
 	 *	Get command line arguments.
@@ -121,7 +95,7 @@ main(int argc, char *  argv[])
 		if (readInputDoubleDistributionsFromCSV(
 				arguments.common.inputFilePath,
 				expectedInputHeaders,
-				inputVariables,
+				arguments.kernelParameters.inputVariables,
 				kXvaInputIndexMax
 		))
 		{
@@ -140,24 +114,24 @@ main(int argc, char *  argv[])
 	}
 
 	/*
-	 *	Set the input variables from the command-line arguments or the
-	 *	defaults when they were not read from the input CSV above.
-	 */
-	if (!arguments.common.isInputFromFileEnabled)
-	{
-		setInputVariables(&arguments, inputVariables);
-	}
-
-	/*
 	 *	Dispatch to the mode-specific kernel.
 	 */
 	if (arguments.common.isMonteCarloMode)
 	{
-		calculateOutputMonteCarlo(&arguments, inputVariables, outputVariables);
+		calculateOutputMonteCarlo(
+			&arguments.kernelParameters,
+			arguments.common.outputSelect,
+			arguments.common.numberOfMonteCarloIterations,
+			outputVariables
+		);
 	}
 	else
 	{
-		calculateOutputUxHw(&arguments, inputVariables, outputVariables);
+		calculateOutputUxHw(
+			&arguments.kernelParameters,
+			arguments.common.outputSelect,
+			outputVariables
+		);
 	}
 
 
@@ -176,10 +150,10 @@ main(int argc, char *  argv[])
 	 *	all outputs, which the argument parser rejects in Monte Carlo mode,
 	 *	so the types array is never indexed out of range here.
 	 */
-	bool    isSelectedOutputScalar = (arguments.common.outputSelect != kXvaOutputIndexMax) &&
-	                                 (outputVariableTypes[arguments.common.outputSelect] == kOutputVariableTypeScalar);
+	bool isSelectedOutputScalar = (arguments.common.outputSelect != kXvaOutputIndexMax) &&
+	                              (outputVariableTypes[arguments.common.outputSelect] == kOutputVariableTypeScalar);
 
-	CommonCommandLineArguments  printArguments = arguments.common;
+	CommonCommandLineArguments printArguments = arguments.common;
 
 	/*
 	 *	Persist the selected value to data.out and route every printer
@@ -189,7 +163,7 @@ main(int argc, char *  argv[])
 	 */
 	if (arguments.common.isMonteCarloMode && isSelectedOutputScalar)
 	{
-		double  selectedOutput = outputVariables[arguments.common.outputSelect];
+		double selectedOutput = outputVariables[arguments.common.outputSelect];
 
 		saveMonteCarloDoubleDataToDataDotOutFile(
 			&selectedOutput,
@@ -212,7 +186,8 @@ main(int argc, char *  argv[])
 			outputVariables,
 			outputVariableNames,
 			kXvaOutputIndexMax,
-			applicationDescription
+			applicationDescription,
+			outputVariableTypes
 		);
 	}
 	/*
@@ -226,7 +201,8 @@ main(int argc, char *  argv[])
 			outputVariables,
 			outputVariableNames,
 			outputVariableDescriptions,
-			monteCarloOutputSamples
+			monteCarloOutputSamples,
+			outputVariableTypes
 		);
 	}
 
@@ -256,5 +232,11 @@ main(int argc, char *  argv[])
 		}
 	}
 
+#ifdef NO_OS_AVAILABLE
+	returnZeroNoOS();
+#else
+
 	return EXIT_SUCCESS;
+
+#endif
 }

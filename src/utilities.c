@@ -80,7 +80,7 @@ printUsage(void)
  *	@param	arguments	: command line arguments pointer.
  *	@return			: `kCommonConstantReturnTypeSuccess` if successful, else `kCommonConstantReturnTypeError`.
  */
-static CommonConstantReturnType
+CommonConstantReturnType
 setDefaultCommandLineArguments(CommandLineArguments * arguments)
 {
 	if (arguments == NULL)
@@ -94,23 +94,74 @@ setDefaultCommandLineArguments(CommandLineArguments * arguments)
 #pragma GCC diagnostic ignored "-Wmissing-braces"
 	*arguments = (CommandLineArguments) {
 		.common             = (CommonCommandLineArguments) { 0 },
-		.spotPrice          = kXvaDemoDefaultSpotPrice,
-		.riskFreeRate       = kXvaDemoDefaultRiskFreeRate,
-		.dividendYield      = kXvaDemoDefaultDividendYield,
+		.kernelParameters   = (KernelParameters) {
+			.spotPrice          = kXvaDemoDefaultSpotPrice,
+			.riskFreeRate       = kXvaDemoDefaultRiskFreeRate,
+			.dividendYield      = kXvaDemoDefaultDividendYield,
+			.maturity           = kXvaDemoDefaultMaturity,
+			.creditSpread       = kXvaDemoDefaultCreditSpread,
+			.ownCreditSpread    = kXvaDemoDefaultOwnCreditSpread,
+			.strikePrice        = kXvaDemoDefaultStrikePrice,
+			.inputVariables     = {
+				[kXvaInputIndexVolatility] = kXvaDemoDefaultVolatility,
+			},
+		},
 		.volatility         = kXvaDemoDefaultVolatility,
-		.maturity           = kXvaDemoDefaultMaturity,
-		.creditSpread       = kXvaDemoDefaultCreditSpread,
-		.ownCreditSpread    = kXvaDemoDefaultOwnCreditSpread,
-		.strikePrice        = kXvaDemoDefaultStrikePrice,
 	};
 #pragma GCC diagnostic pop
 
 	return kCommonConstantReturnTypeSuccess;
 }
 
+#ifdef NO_OS_AVAILABLE
+CommonConstantReturnType
+setNoOSCommandLineArguments(CommandLineArguments * arguments)
+{
+	if (arguments == NULL)
+	{
+		fprintf(stderr, "Error: The provided pointer to arguments is NULL.\n");
+
+		return kCommonConstantReturnTypeError;
+	}
+
+	/*
+	 *	Start from the defaults so that every demo-specific field is
+	 *	initialized, then override the ones the no-OS build fixes. The
+	 *	`common` sub-struct is zeroed by this call, so it is set explicitly
+	 *	below.
+	 */
+	if (setDefaultCommandLineArguments(arguments) != kCommonConstantReturnTypeSuccess)
+	{
+		return kCommonConstantReturnTypeError;
+	}
+
+	arguments->common.numberOfMonteCarloIterations  = 1;
+	arguments->common.outputSelect                  = kXvaOutputIndexMax;
+	arguments->common.isTimingEnabled               = false;
+	arguments->common.isMonteCarloMode              = false;
+	arguments->common.isOutputJSONMode              = false;
+	arguments->common.isWriteToFileEnabled          = false;
+
+	return kCommonConstantReturnTypeSuccess;
+}
+#endif
+
 CommonConstantReturnType
 getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  arguments)
 {
+#ifdef NO_OS_AVAILABLE
+	/*
+	 *	The no-OS build has no command line to parse, so ignore `argc` and
+	 *	`argv` and use the hard-coded configuration instead.
+	 */
+	(void) argc;
+	(void) argv;
+
+	puts("Using hard coded command line arguments");
+
+	return setNoOSCommandLineArguments(arguments);
+
+#else
 	const char *    volatilityArg       = NULL;
 	const char *    spotPriceArg        = NULL;
 	const char *    riskFreeRateArg     = NULL;
@@ -170,13 +221,13 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 
 	/*
 	 *	When `outputSelect` is set to `kXvaOutputIndexMax`, we cannot be
-	 *	in benchmarking mode or Monte Carlo mode.
+	 *	in Monte Carlo mode.
 	 */
 	if (arguments->common.outputSelect == kXvaOutputIndexMax)
 	{
-		if ((arguments->common.isBenchmarkingMode) || (arguments->common.isMonteCarloMode))
+		if (arguments->common.isMonteCarloMode)
 		{
-			fprintf(stderr, "Error: Please select a single output when in benchmarking mode or Monte Carlo mode.\n");
+			fprintf(stderr, "Error: Please select a single output when in Monte Carlo mode.\n");
 
 			return kCommonConstantReturnTypeError;
 		}
@@ -224,8 +275,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 		}
 
 		arguments->volatility = volatility;
-		arguments->inputVariables[kXvaInputIndexVolatility]        = volatility;
-		arguments->isInputVariableSet[kXvaInputIndexVolatility]    = true;
+		arguments->kernelParameters.inputVariables[kXvaInputIndexVolatility] = volatility;
 	}
 
 	if (spotPriceArg != NULL)
@@ -248,7 +298,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->spotPrice = spotPrice;
+		arguments->kernelParameters.spotPrice = spotPrice;
 	}
 
 	if (riskFreeRateArg != NULL)
@@ -263,7 +313,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->riskFreeRate = riskFreeRate;
+		arguments->kernelParameters.riskFreeRate = riskFreeRate;
 	}
 
 	if (dividendYieldArg != NULL)
@@ -278,7 +328,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->dividendYield = dividendYield;
+		arguments->kernelParameters.dividendYield = dividendYield;
 	}
 
 	if (maturityArg != NULL)
@@ -301,7 +351,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->maturity = maturity;
+		arguments->kernelParameters.maturity = maturity;
 	}
 
 	if (creditSpreadArg != NULL)
@@ -324,7 +374,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->creditSpread = creditSpread;
+		arguments->kernelParameters.creditSpread = creditSpread;
 	}
 
 	if (ownCreditSpreadArg != NULL)
@@ -347,7 +397,7 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->ownCreditSpread = ownCreditSpread;
+		arguments->kernelParameters.ownCreditSpread = ownCreditSpread;
 	}
 
 	if (strikePriceArg != NULL)
@@ -370,8 +420,10 @@ getCommandLineArguments(int argc, char *  argv[], CommandLineArguments *  argume
 			return kCommonConstantReturnTypeError;
 		}
 
-		arguments->strikePrice = strikePrice;
+		arguments->kernelParameters.strikePrice = strikePrice;
 	}
 
 	return kCommonConstantReturnTypeSuccess;
+
+#endif
 }

@@ -27,41 +27,29 @@
 
 /**
  *	@brief	Simulate a Monte Carlo ensemble of Geometric Brownian Motion
- *		paths using the exact (closed-form) solution. Each of the
- *		`numPathsRequested` paths is an independent scalar realisation:
- *		the `UxHwDoubleGaussDist()` call in the stepping loop returns a
+ *		paths using the exact (closed-form) solution and compute their
+ *		exposure profile in the same pass. Each of the `numPaths` paths
+ *		is an independent scalar realisation: the
+ *		`UxHwDoubleGaussDist()` call in the stepping loop returns a
  *		fresh pseudo-random sample per call under the native
- *		compatibility layer.
+ *		compatibility layer. EE, EPE and ENE are cross-sectional sample
+ *		means over the paths at each time step, and PFE is the
+ *		cross-sectional sample quantile of the positive exposures. Only
+ *		the current step's spot of each path is held, not the whole
+ *		path matrix.
  *
- *	@param	paths			: Output: the simulated path ensemble.
- *	@param	market			: Market data (spot, rates, volatility, maturity).
- *	@param	numPathsRequested	: Number of Monte Carlo paths to simulate.
- *	@return	int			: Returns 0 on success, `EXIT_FAILURE` on error.
- */
-int
-xvaSimulateGbmPathsMonteCarlo(
-	XvaSimulationPaths *    paths,
-	const XvaMarketData *   market,
-	size_t                  numPathsRequested);
-
-/**
- *	@brief	Compute the exposure profile of a Monte Carlo path ensemble.
- *		EE, EPE and ENE are cross-sectional sample means over the paths
- *		at each time step, and PFE is the cross-sectional sample
- *		quantile of the positive exposures.
- *
- *	@param	profile	: Output: the exposure profile.
- *	@param	paths	: The simulated path ensemble.
- *	@param	market	: Market data (rates, dividend yield, maturity).
- *	@param	strike	: Strike price of the derivative.
- *	@return	int	: Returns 0 on success, `EXIT_FAILURE` on error.
+ *	@param	profile		: Output: the exposure profile.
+ *	@param	market		: Market data (spot, rates, volatility, maturity).
+ *	@param	strike		: Strike price of the derivative.
+ *	@param	numPaths	: Number of Monte Carlo paths to simulate.
+ *	@return	int		: Returns 0 on success, `EXIT_FAILURE` on error.
  */
 int
 xvaComputeExposureProfileMonteCarlo(
 	XvaExposureProfile *        profile,
-	const XvaSimulationPaths *  paths,
 	const XvaMarketData *       market,
-	double                      strike);
+	double                      strike,
+	size_t                      numPaths);
 
 /**
  *	@brief	Price the European put under Monte Carlo execution. The

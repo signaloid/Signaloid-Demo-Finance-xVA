@@ -29,9 +29,9 @@
  *	values carry a complete probability distribution, and integrates that
  *	distribution out in a single pass.
  *
- *	The two kernels share the allocation helpers in `xva-gbm.c` and
- *	`xva-exposure.c` and the mode-agnostic xVA metric computations in
- *	`xva-cva.c` and friends.
+ *	The two kernels share the GBM step constants in `xva-gbm.c`, the
+ *	mark-to-market in `xva-exposure.c` and the mode-agnostic xVA metric
+ *	computations in `xva-cva.c` and friends.
  */
 
 #include "xva-config.h"
@@ -41,75 +41,45 @@
 #include <stdlib.h>
 
 int
-xvaSimulateGbmPathsUxHw(
-	XvaSimulationPaths *    paths,
-	const XvaMarketData *   market)
-{
-	XvaGbmPathParameters    parameters;
-
-	/*
-	 *	A single distributional path represents the whole ensemble.
-	 */
-	if (xvaAllocateGbmPaths(paths, market, 1, &parameters) != 0)
-	{
-		return EXIT_FAILURE;
-	}
-
-	for (size_t stepIdx = 1; stepIdx <= parameters.numSteps; stepIdx++)
-	{
-		double  zz          = UxHwDoubleGaussDist(0.0, 1.0);
-		double  prevPrice   = paths->paths[0][stepIdx - 1];
-
-		/*
-		 *	Break correlation tracking between time steps. Each step
-		 *	depends only on the previous step's value, so take an
-		 *	independent copy of the previous price before propagating
-		 *	it forward.
-		 */
-		prevPrice = UxHwDoubleGetIndependentCopy(prevPrice);
-
-		paths->paths[0][stepIdx] = prevPrice *
-		                           exp(parameters.driftDt + parameters.diffusionSqrtDt * zz);
-	}
-
-	return 0;
-}
-
-int
 xvaComputeExposureProfileUxHw(
 	XvaExposureProfile *        profile,
-	const XvaSimulationPaths *  paths,
 	const XvaMarketData *       market,
 	double                      strike)
 {
-	size_t  numSteps;
-	double  riskFreeRate;
-	double  dividendYield;
-	double  maturity;
-	double  dt;
+	XvaGbmPathParameters    parameters;
+	double                  riskFreeRate;
+	double                  dividendYield;
+	double                  maturity;
+	double                  dt;
+	double                  spotPrice;
 
-	if (profile == NULL || paths == NULL || market == NULL)
+	if (profile == NULL || market == NULL)
 	{
 		return EXIT_FAILURE;
 	}
 
-	numSteps        = paths->numSteps;
+	xvaGetGbmPathParameters(market, &parameters);
+
 	riskFreeRate    = market->riskFreeRate;
 	dividendYield   = market->dividendYield;
 	maturity        = market->maturity;
-	dt              = paths->dt;
+	dt              = parameters.dt;
 
-	if (xvaAllocateExposureProfile(profile, numSteps) != 0)
-	{
-		return EXIT_FAILURE;
-	}
+	profile->numTimeSteps = parameters.numSteps + 1;  /*	Include t=0 */
+
+	/*
+	 *	A single distributional path represents the whole ensemble. It is
+	 *	advanced one step at a time and each step is folded into the
+	 *	exposure profile straight away, so only the current spot is held
+	 *	rather than the whole path.
+	 */
+	spotPrice = market->spotPrice;
 
 	/*
 	 *	Compute exposure at each time step
 	 */
-	for (size_t ii = 0; ii < numSteps; ii++)
+	for (size_t ii = 0; ii < profile->numTimeSteps; ii++)
 	{
-		double  spotPrice;
 		double  mtmValue;
 		double  currentTime;
 		double  timeToMaturity;
@@ -130,10 +100,27 @@ xvaComputeExposureProfileUxHw(
 		}
 
 		/*
+		 *	Advance the path from the previous step using exact GBM
+		 *	simulation. Step 0 is the deterministic spot.
+		 */
+		if (ii > 0)
+		{
+			double  zz = UxHwDoubleGaussDist(0.0, 1.0);
+
+			/*
+			 *	Break dependency tracking between time steps. Each
+			 *	step depends only on the previous step's value, so
+			 *	take an independent copy of the previous price before
+			 *	propagating it forward.
+			 */
+			spotPrice = UxHwDoubleGetIndependentCopy(spotPrice) *
+			            exp(parameters.driftDt + parameters.diffusionSqrtDt * zz);
+		}
+
+		/*
 		 *	Compute mark-to-market value.
 		 *	Using forward contract as example (easily extensible)
 		 */
-		spotPrice   = paths->paths[0][ii];
 		mtmValue    = xvaComputeForwardMtm(spotPrice, strike, riskFreeRate, dividendYield, timeToMaturity);
 
 		/*
@@ -168,7 +155,8 @@ xvaComputeExposureProfileUxHw(
 		positiveExposureDistribution    = UxHwDoubleMixture(
 			UxHwDoubleLimitDistributionSupport(mtmValue, 0.0, DBL_MAX),
 			0.0,
-			probPositive);
+			probPositive
+		);
 
 		profile->expectedPositiveExposure[ii]   = UxHwDoubleNthMoment(positiveExposureDistribution, 1);
 		profile->potentialFutureExposure[ii]    = UxHwDoubleQuantile(positiveExposureDistribution, kXvaPfeQuantile);
@@ -182,12 +170,27 @@ xvaComputeExposureProfileUxHw(
 		negatedMtm      = -mtmValue;
 		probNegative    = UxHwDoubleProbabilityGT(negatedMtm, 0.0);
 
+		/*
+		 *	When there is no mass below zero (for example the
+		 *	deterministic spot at step 0), the truncation of -V has no
+		 *	support and returns NaN. In that case max(-V, 0) is the Dirac
+		 *	at 0, so ENE is exactly 0.
+		 */
+		if (probNegative == 0.0)
+		{
+			profile->expectedNegativeExposure[ii] = 0.0;
+
+			continue;
+		}
+
 		profile->expectedNegativeExposure[ii] = -UxHwDoubleNthMoment(
 			UxHwDoubleMixture(
 				UxHwDoubleLimitDistributionSupport(negatedMtm, 0.0, DBL_MAX),
 				0.0,
-				probNegative),
-			1);
+				probNegative
+			),
+			1
+		);
 	}
 
 	return 0;
@@ -198,7 +201,7 @@ xvaEuropeanPutUxHw(
 	const XvaMarketData *   market,
 	double                  strikePrice)
 {
-	double  putPrice;
+	double putPrice;
 
 	putPrice = xvaBlackScholesPut(
 		market->spotPrice,

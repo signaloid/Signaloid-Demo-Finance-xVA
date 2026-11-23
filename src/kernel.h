@@ -22,25 +22,56 @@
 
 #pragma once
 
-#include "utilities.h"
+#include <stdlib.h>
 #include "xva-config.h"
 
 /**
+ *	@brief	Market, credit and trade parameters and input variables consumed
+ *		by the kernels. The command-line parser populates it directly, and
+ *		the caller overwrites `inputVariables` when reading inputs from a
+ *		CSV file, so the kernels do not depend on the command-line
+ *		handling.
+ */
+typedef struct
+{
+	double  spotPrice;
+	double  riskFreeRate;
+	double  dividendYield;
+	double  maturity;
+	double  creditSpread;
+	double  ownCreditSpread;
+	double  strikePrice;
+
+	/*
+	 *	Input variables, indexed by `XvaInputIndex`. The volatility
+	 *	`inputVariables[kXvaInputIndexVolatility]` is a calibrated market
+	 *	input, held at a fixed deterministic value (`-V`, or the demo
+	 *	default) so that the Monte Carlo and UxHw modes compute the same
+	 *	production xVA. It is a distribution only when read from an input
+	 *	CSV file (`-i`). The stochasticity that drives exposure is the
+	 *	Brownian path ensemble, not the volatility itself.
+	 */
+	double inputVariables[kXvaInputIndexMax];
+} KernelParameters;
+
+/**
  *	@brief	Monte Carlo calculation kernel. Simulates
- *		`arguments->common.numberOfMonteCarloIterations` independent
+ *		`numberOfMonteCarloIterations` independent
  *		Brownian paths, forms the exposure profile as their
  *		cross-sectional average, and computes the selected xVA metric(s)
  *		from it using scalar sample statistics.
  *
- *	@param	arguments	: Pointer to command line arguments struct.
- *	@param	inputVariables	: The input variables.
- *	@param	outputVariables	: The output variables.
+ *	@param	parameters			: The model parameters.
+ *	@param	outputSelect			: Which output to compute, or `kXvaOutputIndexMax` for all.
+ *	@param	numberOfMonteCarloIterations	: Number of Brownian paths to simulate.
+ *	@param	outputVariables			: The output variables.
  */
 void
 calculateOutputMonteCarlo(
-	CommandLineArguments *  arguments,
-	double *                inputVariables,
-	double *                outputVariables);
+	const KernelParameters *    parameters,
+	size_t                      outputSelect,
+	size_t                      numberOfMonteCarloIterations,
+	double *                    outputVariables);
 
 /**
  *	@brief	UxHw calculation kernel. Simulates a single distributional
@@ -48,12 +79,12 @@ calculateOutputMonteCarlo(
  *		distribution out with UxHw distributional arithmetic, and
  *		computes the selected xVA metric(s) from it.
  *
- *	@param	arguments	: Pointer to command line arguments struct.
- *	@param	inputVariables	: The input variables.
+ *	@param	parameters	: The model parameters.
+ *	@param	outputSelect	: Which output to compute, or `kXvaOutputIndexMax` for all.
  *	@param	outputVariables	: The output variables.
  */
 void
 calculateOutputUxHw(
-	CommandLineArguments *  arguments,
-	double *                inputVariables,
-	double *                outputVariables);
+	const KernelParameters *    parameters,
+	size_t                      outputSelect,
+	double *                    outputVariables);

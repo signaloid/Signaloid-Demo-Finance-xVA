@@ -79,7 +79,6 @@
 #include "xva-config.h"
 #include <math.h>
 #include <stdlib.h>
-#include <string.h>
 #include <float.h>
 
 /*
@@ -222,105 +221,4 @@ xvaComputeForwardMtm(
 	}
 
 	return spot * exp(-dividendYield * timeToMaturity) - strike * exp(-riskFreeRate * timeToMaturity);
-}
-
-/*
- *	xvaAllocateExposureProfile
- *
- *	Allocate the four exposure arrays (EE, EPE, ENE, PFE) of an exposure
- *	profile and zero them.
- *
- *	The exposure metrics themselves are:
- *
- *	1. EE(t)  = mean(MtM)              - expected exposure
- *	2. EPE(t) = mean(max(MtM, 0))      - positive exposure
- *	3. ENE(t) = mean(min(MtM, 0))      - negative exposure
- *	4. PFE(t) = quantile(max(MtM, 0))  - tail exposure
- *
- *	Reference: Gregory (2020), Chapter 10, Equations (10.1)-(10.4)
- *
- *	How those means and quantiles are formed differs fundamentally between
- *	execution modes -- Monte Carlo averages across a path ensemble, while
- *	UxHw integrates a single distributional path -- so the profile
- *	computation lives in the mode-specific kernels (`xva-monte-carlo.c`
- *	and `xva-uxhw.c`) and only the allocation is shared here.
- *
- *	Parameters:
- *	  profile  - Output: XvaExposureProfile structure to populate
- *	  numSteps - Number of time steps in the profile
- *
- *	Returns: 0 on success, EXIT_FAILURE on error
- */
-int
-xvaAllocateExposureProfile(
-	XvaExposureProfile *    profile,
-	size_t                  numSteps)
-{
-	if (profile == NULL)
-	{
-		return EXIT_FAILURE;
-	}
-
-	profile->numTimeSteps               = numSteps;
-	profile->expectedExposure           = (double *) calloc(numSteps, sizeof(double));
-	profile->expectedPositiveExposure   = (double *) calloc(numSteps, sizeof(double));
-	profile->expectedNegativeExposure   = (double *) calloc(numSteps, sizeof(double));
-	profile->potentialFutureExposure    = (double *) calloc(numSteps, sizeof(double));
-
-	if (profile->expectedExposure == NULL ||
-	    profile->expectedPositiveExposure == NULL ||
-	    profile->expectedNegativeExposure == NULL ||
-	    profile->potentialFutureExposure == NULL)
-	{
-		xvaFreeExposureProfile(profile);
-
-		return EXIT_FAILURE;
-	}
-
-	return 0;
-}
-
-/*
- *	xvaFreeExposureProfile
- *
- *	Free memory allocated for an exposure profile.
- *
- *	Parameters:
- *	  profile - XvaExposureProfile structure to free
- */
-void
-xvaFreeExposureProfile(XvaExposureProfile * profile)
-{
-	if (profile == NULL)
-	{
-		return;
-	}
-
-	if (profile->expectedExposure != NULL)
-	{
-		free(profile->expectedExposure);
-		profile->expectedExposure = NULL;
-	}
-
-	if (profile->expectedPositiveExposure != NULL)
-	{
-		free(profile->expectedPositiveExposure);
-		profile->expectedPositiveExposure = NULL;
-	}
-
-	if (profile->expectedNegativeExposure != NULL)
-	{
-		free(profile->expectedNegativeExposure);
-		profile->expectedNegativeExposure = NULL;
-	}
-
-	if (profile->potentialFutureExposure != NULL)
-	{
-		free(profile->potentialFutureExposure);
-		profile->potentialFutureExposure = NULL;
-	}
-
-	profile->numTimeSteps = 0;
-
-	return;
 }

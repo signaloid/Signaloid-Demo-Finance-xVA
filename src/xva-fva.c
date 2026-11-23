@@ -146,11 +146,6 @@ xvaComputeFca(
 		return 0.0;
 	}
 
-	if (profile->expectedPositiveExposure == NULL)
-	{
-		return 0.0;
-	}
-
 	rr              = market->riskFreeRate;
 	maturity        = market->maturity;
 	dt              = maturity / (double) (profile->numTimeSteps - 1);
@@ -256,11 +251,6 @@ xvaComputeFba(
 	double  fba;
 
 	if (profile == NULL || funding == NULL || market == NULL)
-	{
-		return 0.0;
-	}
-
-	if (profile->expectedNegativeExposure == NULL)
 	{
 		return 0.0;
 	}

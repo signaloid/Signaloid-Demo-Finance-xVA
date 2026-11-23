@@ -27,36 +27,24 @@
 
 /**
  *	@brief	Simulate a single distributional Geometric Brownian Motion path
- *		using the exact (closed-form) solution. On the Signaloid Cloud
- *		Compute Engine the `UxHwDoubleGaussDist()` call in the stepping
- *		loop yields the full standard normal distribution, so the one
- *		path carries the whole scenario ensemble.
- *
- *	@param	paths	: Output: a one-path ensemble holding the distributional path.
- *	@param	market	: Market data (spot, rates, volatility, maturity).
- *	@return	int	: Returns 0 on success, `EXIT_FAILURE` on error.
- */
-int
-xvaSimulateGbmPathsUxHw(
-	XvaSimulationPaths *    paths,
-	const XvaMarketData *   market);
-
-/**
- *	@brief	Compute the exposure profile of a single distributional path.
- *		EE, EPE and ENE are read off the mark-to-market distribution as
- *		first moments rather than being averaged across paths, and PFE
- *		is the high quantile of the positive-exposure distribution.
+ *		using the exact (closed-form) solution and compute its exposure
+ *		profile in the same pass. On the Signaloid Cloud Compute Engine
+ *		the `UxHwDoubleGaussDist()` call in the stepping loop yields the
+ *		full standard normal distribution, so the one path carries the
+ *		whole scenario ensemble. EE, EPE and ENE are read off the
+ *		mark-to-market distribution as first moments rather than being
+ *		averaged across paths, and PFE is the high quantile of the
+ *		positive-exposure distribution. Only the current step's spot is
+ *		held, not the whole path.
  *
  *	@param	profile	: Output: the exposure profile.
- *	@param	paths	: The one-path distributional ensemble.
- *	@param	market	: Market data (rates, dividend yield, maturity).
+ *	@param	market	: Market data (spot, rates, volatility, maturity).
  *	@param	strike	: Strike price of the derivative.
  *	@return	int	: Returns 0 on success, `EXIT_FAILURE` on error.
  */
 int
 xvaComputeExposureProfileUxHw(
 	XvaExposureProfile *        profile,
-	const XvaSimulationPaths *  paths,
 	const XvaMarketData *       market,
 	double                      strike);
 
